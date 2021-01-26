@@ -1,0 +1,63 @@
+
+
+DECLARE 
+	@tableName varchar(32) = 'testTable',
+	@xml xml = 
+	'<ROOT>
+		<columns>
+		<column name="FormType" type="varchar(1)" />
+		<column name="FormTypeId" type="int" />
+		</columns>
+		<rows>
+		<row FormType="M" FormTypeId="1" />
+		<row FormType="M" FormTypeId="1" />
+		</rows>
+	</ROOT>'
+
+
+IF OBJECT_ID('tempdb..#columns', 'U') IS NOT NULL
+	DROP TABLE #columns
+
+IF OBJECT_ID('tempdb..#rows', 'U') IS NOT NULL
+	DROP TABLE #rows
+
+
+DECLARE @docHandle int
+
+EXEC sp_xml_preparedocument @docHandle OUTPUT, @xml;
+
+--column names and data types
+SELECT * 
+INTO #columns
+FROM OPENXML(@docHandle, '/ROOT/columns/column', 1) 
+WITH ([name] varchar(40), [type] varchar(max)) 
+
+EXEC sp_xml_removedocument @docHandle
+
+DECLARE 
+	@columns nvarchar(max) 
+	,@sql nvarchar(max) 
+
+SELECT @columns =
+	STUFF((
+		SELECT concat(', ',[name],' ',[type])
+		FROM #columns
+		FOR XML PATH('')
+	),1,1,'')
+
+--row data
+SELECT @sql = concat(
+	' IF OBJECT_ID(''tempdb..#',@tableName,''') IS NOT NULL',
+	' DROP TABLE #',@tableName,
+	' DECLARE @docHandle int, @xml xml = ''',convert(nvarchar(max),@xml),'''',
+	' EXEC sp_xml_preparedocument @docHandle OUTPUT, @xml',
+	' SELECT *',
+	' INTO #',@tableName,
+	' FROM OPENXML(@docHandle, ''/ROOT/rows/row'', 1) ',
+	' WITH (',@columns,')',
+	' SELECT * FROM #',@tableName
+)
+
+exec sp_executesql @sql
+
+--EXEC sp_xml_removedocument @docHandle  
